@@ -6,7 +6,7 @@ vectorstore = Vectorstore()
 rag_tool = {
     "type": "function",
     "function": {
-        "name": "rag_tool_function",
+        "name": "search_manuals",
         "description": "Retrieve relevant documents using a semantic search from the knowledge base.",
         "parameters": {
             "type": "object",
@@ -21,8 +21,9 @@ rag_tool = {
     }
 }
 
-def rag_tool_function(query: str, document: str = "default") -> dict:
+def search_manuals(query: str, document: str = "default") -> dict:
     """Uses the vector store to retrieve similar chunks given a query."""
+    print("Using search manual")
     try:
         docs = vectorstore.similarity_search(document=document, query=query)
         context = [doc.page_content for doc in docs]
