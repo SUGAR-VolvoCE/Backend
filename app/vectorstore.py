@@ -5,8 +5,8 @@ from pathlib import Path
 import backoff
 import openai
 import numpy as np
-from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
+import faiss
 
 from .config import settings
 from .logger import logger
@@ -15,40 +15,42 @@ api_key = settings.API_KEY
 if not api_key:
     raise ValueError("OpenAI API key is not set.")
 
-# Define file paths
-faiss_index_path = Path(settings.FAISS_INDEX_PATH)  # Corrected FAISS index path
-text_mapping_path = Path(settings.TEXT_MAPPING_PATH)   # Corrected pickle file path
-
-import faiss
+@backoff.on_exception(backoff.expo, openai.RateLimitError)
+def compute_with_backoff(thunk):
+    return thunk()
 
 class Vectorstore:
     def __init__(self):
         self.embeddings_provider = OpenAIEmbeddings(api_key=api_key)
-        self.index = None
-        self.id_to_text = {}
-        self.build_or_load_index()
+        self.index_cache = {}  # Cache of machine_name → (index, id_to_text)
 
-    def build_or_load_index(self):
-        """Load existing FAISS index and text mapping."""
-        if faiss_index_path.exists() and text_mapping_path.exists():
-            logger.info("Loading existing FAISS index and text mapping...")
+    def load_machine_index(self, machine_name):
+        """Load FAISS index and text mapping for a given machine."""
+        if machine_name in self.index_cache:
+            return self.index_cache[machine_name]
 
-            self.index = faiss.read_index(str(faiss_index_path))
+        # Folder structure: /FAISS_DIR/ec220d/index.faiss and index.pkl
+        machine_dir = Path(settings.FAISS_INDEX_ROOT) / machine_name
+        index_path = machine_dir / "index.faiss"
+        mapping_path = machine_dir / "index.pkl"
 
-            with open(text_mapping_path, "rb") as f:
-                self.id_to_text = pickle.load(f)
-        else:
-            logger.error("FAISS index or text mapping not found. Please create them first.")
-            raise FileNotFoundError("FAISS index or text mapping file is missing.")
+        if not index_path.exists() or not mapping_path.exists():
+            raise FileNotFoundError(f"FAISS index or mapping for machine '{machine_name}' not found.")
 
-    def similarity_search(self, query, k=5):
-        """Perform a similarity search on the FAISS index."""
+        logger.info(f"Loading FAISS index for machine {machine_name}...")
+
+        index = faiss.read_index(str(index_path))
+        with open(mapping_path, "rb") as f:
+            id_to_text = pickle.load(f)
+
+        self.index_cache[machine_name] = (index, id_to_text)
+        return index, id_to_text
+
+    def similarity_search(self, query, machine_name, k=5):
+        print(query)
+        """Perform similarity search on the FAISS index of the specific machine."""
+        index, id_to_text = self.load_machine_index(machine_name)
         embedding = self.embeddings_provider.embed_query(query)
-        D, I = self.index.search(np.array([embedding]).astype("float32"), k)
-        return [self.id_to_text[i] for i in I[0]]
-
-
-@backoff.on_exception(backoff.expo, openai.RateLimitError)
-def compute_with_backoff(thunk):
-    """Handle retries for rate-limited API requests."""
-    return thunk()
+        D, I = index.search(np.array([embedding]).astype("float32"), k)
+        print([id_to_text[i] for i in I[0]])
+        return [id_to_text[i] for i in I[0]]

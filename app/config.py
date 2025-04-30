@@ -6,6 +6,7 @@ load_dotenv()
 class Settings:
     API_KEY = os.getenv("OPENAI_API_KEY")
     FAISS_INDEX_PATH = "data/faiss_index/index.faiss"
+    FAISS_INDEX_ROOT="data/faiss_index"
     FAISS_DIRECTORY = "data/faiss_index"
     TEXT_MAPPING_PATH = "data/faiss_index/index.pkl"
 

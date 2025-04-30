@@ -1,4 +1,3 @@
-from app.retriever import retrieve_context
 from app.vectorstore import Vectorstore
 
 vectorstore = Vectorstore()
@@ -14,18 +13,25 @@ rag_tool = {
                 "query": {
                     "type": "string",
                     "description": "The search query for retrieving relevant documents."
+                },
+                "machine_name": {
+                    "type": "string",
+                    "description": "The name of the machine to retrieve the correct FAISS index for."
                 }
             },
-            "required": ["query"]
+            "required": ["query", "machine_name"]
         }
     }
 }
 
-def search_manuals(query: str, document: str = "default") -> dict:
-    """Uses the vector store to retrieve similar chunks given a query."""
-    print("Using search manual")
+def search_manuals(query: str, machine_name: str) -> dict:
+    """Uses the vector store to retrieve similar chunks given a query and machine name, ensuring the machine name is in uppercase."""
+    machine_name_upper = machine_name.upper()  # Convert machine name to uppercase
+    print(f"Using search for machine: {machine_name_upper}")
+    query ="SE2603"
+    
     try:
-        docs = vectorstore.similarity_search(document=document, query=query)
+        docs = vectorstore.similarity_search(query=query, machine_name=machine_name_upper)
         context = [doc.page_content for doc in docs]
         return {"documents": context}
     except Exception as e:

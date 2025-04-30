@@ -1,18 +1,20 @@
 # app/tools/info_tool.py
-def match_model(model_name: str) -> bool:
-    valid_models = ["EC140E", "EC160E", "EC180E", "EC200E", "EC220E", "EC250E", "EC300E", "EC350E", "EC380E", "EC480E", "EC750E", "EC950F", "EW60E", "EW160E", "EW180E", "EW220E", "L20H", "L25H", "L30G", "L35G", "L45H", "L50H", "L60H", "L70H", "L90H", "L110H", "L120H", "L150H", "L180H", "L220H", "L260H", "L350H", "A25G", "A30G", "A35G", "A40G", "A45G", "A60H", "EC380EHR", "EC480EHR", "P6820D ABG", "P7820D ABG", "P8820D ABG"]
-
-    if model_name in valid_models:
-        return f"The model '{model_name}' is valid."
+def match_model(model_name: str):
+    # Validate the model (e.g., against your DB or predefined list)
+    valid = model_name in ["EC220D", "EC250E", "EC300E"]
+    if valid:
+        return {"model_name": model_name}  # ✅ must return in this format
     else:
-        return f"The model '{model_name}' is not in the list."
+        return {"model_name": None}
 
-def match_serial_number(serial_number: str) -> bool:
-    if serial_number.isalnum() and len(serial_number) >= 6:
-        return f"The number '{serial_number}' is valid."
-    else: 
-        return f"The number '{serial_number}' is not in the list."
 
+def match_serial_number(serial_number: str):
+    # Validate serial (e.g., numeric and correct length)
+    valid = serial_number.isdigit() and len(serial_number) == 10
+    if valid:
+        return {"serial_number": serial_number}  # ✅ must return in this format
+    else:
+        return {"serial_number": None}
 
 match_model_tool = {
     "type": "function",
