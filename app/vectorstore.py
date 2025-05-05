@@ -1,7 +1,7 @@
 import os
 import pickle
 from pathlib import Path
-
+from langchain_core.documents import Document 
 import backoff
 import openai
 import numpy as np
@@ -48,9 +48,8 @@ class Vectorstore:
 
     def similarity_search(self, query, machine_name, k=5):
         print(query)
-        """Perform similarity search on the FAISS index of the specific machine."""
         index, id_to_text = self.load_machine_index(machine_name)
         embedding = self.embeddings_provider.embed_query(query)
         D, I = index.search(np.array([embedding]).astype("float32"), k)
-        print([id_to_text[i] for i in I[0]])
-        return [id_to_text[i] for i in I[0]]
+        return [Document(page_content=id_to_text[i]) for i in I[0]]  # ✅ return Document objects
+

@@ -27,9 +27,7 @@ rag_tool = {
 def search_manuals(query: str, machine_name: str) -> dict:
     """Uses the vector store to retrieve similar chunks given a query and machine name, ensuring the machine name is in uppercase."""
     machine_name_upper = machine_name.upper()  # Convert machine name to uppercase
-    print(f"Using search for machine: {machine_name_upper}")
-    query ="SE2603"
-    
+    print(f"Using search for machine: {machine_name_upper}")    
     try:
         docs = vectorstore.similarity_search(query=query, machine_name=machine_name_upper)
         context = [doc.page_content for doc in docs]
