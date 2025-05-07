@@ -5,6 +5,8 @@ import numpy as np
 from openai import OpenAI
 from PyPDF2 import PdfReader
 from dotenv import load_dotenv
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -23,10 +25,16 @@ def get_embedding(text: str, model="text-embedding-ada-002"):
 def read_pdf_chunks(path):
     reader = PdfReader(path)
     all_text = " ".join([page.extract_text() or "" for page in reader.pages])
-    chunks = []
-    for i in range(0, len(all_text), CHUNK_SIZE - CHUNK_OVERLAP):
-        chunks.append(all_text[i:i + CHUNK_SIZE])
+
+    # Use a smarter splitter
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=100,
+        separators=["\n\n", "\n", ".", " ", ""]
+    )
+    chunks = text_splitter.split_text(all_text)
     return chunks
+
 
 def embed_chunks(chunks):
     embeddings = []

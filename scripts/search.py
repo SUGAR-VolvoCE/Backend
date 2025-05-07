@@ -38,7 +38,7 @@ def search_faiss_index(index, query_vector, k=5):
     return D, I
 
 # === MAIN ===
-query_str = "SE2603"  # Now this will properly match existing embeddings
+query_str = "Maintenance service, every 250 hours service points"  # Now this will properly match existing embeddings
 query_vector = generate_query_vector(query_str)
 
 # Load index and metadata
