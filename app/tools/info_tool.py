@@ -1,20 +1,17 @@
 # app/tools/info_tool.py
 def match_model(model_name: str):
-    # Validate the model (e.g., against your DB or predefined list)
-    valid = model_name in ["EC220D", "EC250E", "EC300E"]
-    if valid:
-        return {"model_name": model_name}  # ✅ must return in this format
-    else:
-        return {"model_name": None}
-
+    print(f"DEBUG: Validating model_name: {model_name}")  # Debug statement
+    # Simulate validation logic
+    if model_name.lower() in ["ec160e", "ec220d"]:
+        return {"model_name": model_name}
+    return {}
 
 def match_serial_number(serial_number: str):
-    # Validate serial (e.g., numeric and correct length)
-    valid = serial_number.isdigit() and len(serial_number) == 10
-    if valid:
-        return {"serial_number": serial_number}  # ✅ must return in this format
-    else:
-        return {"serial_number": None}
+    print(f"DEBUG: Validating serial_number: {serial_number}")  # Debug statement
+    # Simulate validation logic
+    if len(serial_number) >= 6 and serial_number.isalnum():
+        return {"serial_number": serial_number}
+    return {}
 
 match_model_tool = {
     "type": "function",

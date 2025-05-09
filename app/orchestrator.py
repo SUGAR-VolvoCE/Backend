@@ -2,21 +2,28 @@ import openai
 import time
 import json
 import os
+from dotenv import load_dotenv
 from app.tools.rag_tool import search_manuals
 from app.tools.info_tool import match_model, match_serial_number
 
-client = openai.OpenAI()
+load_dotenv(override=True)  # Explicitly reload the .env file
 
+# Strip extra characters from environment variables
 assistant_ids = {
-    "info": os.getenv("INFO_ASSISTANT_ID"),
-    "troubleshoot": os.getenv("TROUBLESHOOT_ASSISTANT_ID"),
-    "solve": os.getenv("SOLVE_ASSISTANT_ID"),
+    "info": os.getenv("INFO_ASSISTANT_ID", "").strip(),
+    "troubleshoot": os.getenv("TROUBLESHOOT_ASSISTANT_ID", "").strip(),
+    "solve": os.getenv("SOLVE_ASSISTANT_ID", "").strip(),
 }
+
+print("DEBUG: Stripped SOLVE_ASSISTANT_ID:", assistant_ids["solve"])
+print("DEBUG: All Environment Variables:", dict(os.environ))
+
+client = openai.OpenAI()
 
 assistants = {
     phase: client.beta.assistants.retrieve(assistant_id=assistant_id)
     for phase, assistant_id in assistant_ids.items()
-    if assistant_id is not None
+    if assistant_id
 }
 
 user_threads = {}
@@ -34,6 +41,8 @@ def handle_tool_calls(tool_calls, user_id):
     for tool_call in tool_calls:
         tool_name = tool_call.function.name
         arguments = json.loads(tool_call.function.arguments)
+
+        print(f"DEBUG: Processing tool call for {tool_name} with arguments: {arguments}")  # Debug statement
 
         if tool_name in tool_function_map:
             try:
@@ -55,6 +64,8 @@ def handle_tool_calls(tool_calls, user_id):
                 else:
                     result = tool_function_map[tool_name](**arguments)
 
+                print(f"DEBUG: Tool {tool_name} result: {result}")  # Debug statement
+
                 outputs.append({
                     "tool_call_id": tool_call.id,
                     "output": json.dumps(result)
@@ -62,16 +73,20 @@ def handle_tool_calls(tool_calls, user_id):
 
                 if tool_name == "match_model" and isinstance(result, dict) and result.get("model_name"):
                     user_info[user_id]["model_name"] = result["model_name"]
+                    print(f"DEBUG: Updated model_name for user {user_id}: {user_info[user_id]['model_name']}")  # Debug statement
 
                 if tool_name == "match_serial_number" and isinstance(result, dict) and result.get("serial_number"):
                     user_info[user_id]["serial_number"] = result["serial_number"]
+                    print(f"DEBUG: Updated serial_number for user {user_id}: {user_info[user_id]['serial_number']}")  # Debug statement
 
             except Exception as e:
+                print(f"DEBUG: Error while calling tool {tool_name}: {e}")  # Debug statement
                 outputs.append({
                     "tool_call_id": tool_call.id,
                     "output": f"Error while calling {tool_name}: {str(e)}"
                 })
         else:
+            print(f"DEBUG: Unknown tool {tool_name}")  # Debug statement
             outputs.append({
                 "tool_call_id": tool_call.id,
                 "output": f"Unknown tool {tool_name}"
@@ -148,7 +163,15 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False):
         time.sleep(1)
 
     messages = client.beta.threads.messages.list(thread_id=thread.id)
-    response = messages.data[0].content[0].text.value
+    print("DEBUG: Messages from thread:", messages)  # Debug statement
+
+    # Extract the response
+    if messages.data and messages.data[0].content:
+        response = messages.data[0].content[0].text.value
+    else:
+        response = "No response from assistant."  # Fallback message
+
+    print("DEBUG: Assistant response:", response)  # Debug statement
 
     print("DEBUG: model_name =", user_info[user_id]["model_name"])
     print("DEBUG: serial_number =", user_info[user_id]["serial_number"])

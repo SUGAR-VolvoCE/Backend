@@ -2,3 +2,4 @@
 app/__pycache__/
 .bash_history
 .venv/
+node_modules/
