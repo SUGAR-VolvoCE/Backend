@@ -12,7 +12,7 @@ rag_tool = {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The search query for retrieving relevant documents."
+                    "description": "The search query for retrieving relevant documents. It MUST be in ENGLISH."
                 },
                 "machine_name": {
                     "type": "string",
