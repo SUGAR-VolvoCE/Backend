@@ -6,6 +6,8 @@ from typing import Dict, List, Tuple
 from app.tools.rag_tool import search_manuals
 from app.tools.report_tool import create_ticket, edit_ticket, solve_ticket
 from app.tools.info_tool import match_model, match_serial_number, create_machine
+import time
+from .logger import logger
 
 client = openai.OpenAI()
 
@@ -37,7 +39,6 @@ tool_function_map = {
 
 def handle_tool_calls(tool_calls, user_id) -> Tuple[List[Dict], List[str]]:
     outputs = []
-    extra_messages = []
     processed_ids = set()  # Set to track processed tool call IDs
 
     for tool_call in tool_calls:
@@ -74,8 +75,9 @@ def handle_tool_calls(tool_calls, user_id) -> Tuple[List[Dict], List[str]]:
                     docs = result.get("documents", [])
                     if docs:
                         docs_text = "\n\n".join(docs)
-                        extra_messages.append(
-                            f"The knowledge base returned the following documents:\n\n{docs_text}\n\nPlease use this information to answer my question."
+                        result = (
+                            f"\n\nThe knowledge base returned the following documents:\n\n{docs_text}\n\n"
+                            "Please use this information to answer the user's question."
                         )
                 else:
                     # Inject user_id where necessary for other tool calls
@@ -104,8 +106,9 @@ def handle_tool_calls(tool_calls, user_id) -> Tuple[List[Dict], List[str]]:
                         possible_serials = result.get("related_serial_numbers")
                         if possible_serials:
                             serials_list = ", ".join(possible_serials)
-                            extra_messages.append(
-                                f"The found serial numbers for that model are: {serials_list}. Check if the serial number is one of those"
+                            result = (
+                                f"\n\nThe found serial numbers for that model are: {serials_list}. "
+                                "Check if the serial number is one of those."
                             )
 
                     elif tool_name == "match_serial_number":
@@ -182,25 +185,31 @@ def handle_tool_calls(tool_calls, user_id) -> Tuple[List[Dict], List[str]]:
             print(f"Exception while processing tool call {tool_call.id}: {str(e)}")  # Log outer exception
             outputs.append({"tool_call_id": tool_call.id, "output": f"Error: {str(e)}"})
 
-    return outputs, extra_messages
+    return outputs
 
 
 def get_or_create_thread(user_id: str, reset: bool):
     if user_id not in user_threads:
         user_threads[user_id] = {"phase": "info", "threads": {}}
-    if reset or "info" not in user_threads[user_id]["threads"]:
+    if reset:
         thread = client.beta.threads.create()
         user_threads[user_id]["phase"] = "info"
-        user_threads[user_id]["threads"]["info"] = thread
-    return user_threads[user_id]["threads"][user_threads[user_id]["phase"]]
+        user_threads[user_id]["thread"]["object"] = thread
+        user_threads[user_id]["thread"]["basic_info"] = False
 
-def ask_troubleshoot_intent(user_id):
-    thread = get_or_create_thread(user_id, reset=False)
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content="Please help me troubleshoot the problem with my machine."
-    )
+    return [user_threads[user_id]["thread"],user_threads[user_id]["thread"]["object"]]
+
+def get_or_create_thread(user_id: str, reset: bool):
+    if user_id not in user_threads:
+        user_threads[user_id] = {"phase": "info", "threads": {}}
+    if reset or "object" not in user_threads[user_id]["threads"]:
+        thread = client.beta.threads.create()
+        user_threads[user_id]["phase"] = "info"
+        user_threads[user_id]["threads"]["object"] = thread
+        user_threads[user_id]["threads"]["basic_info"] = False
+
+    return [user_threads[user_id]["threads"], user_threads[user_id]["threads"]["object"]]
+
 
 def chat_with_assistant(user_id: str, message: str, reset: bool = False):
     if reset or user_id not in user_threads:
@@ -215,7 +224,7 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False):
         user_threads[user_id]["phase"] = "info"
 
     assistant = assistants[current_phase]
-    thread = get_or_create_thread(user_id, reset)
+    thread_vector, thread = get_or_create_thread(user_id, reset)
 
     if reset:
         client.beta.threads.messages.create(
@@ -235,22 +244,36 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False):
         assistant_id=assistant.id
     )
 
+    retries = 0
+    MAX_RETRIES = 30
+
     while True:
         run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-
-        if run_status.status == "requires_action":
+        logger.debug(f"***** Run status: {run_status.status}")
+        if retries >= MAX_RETRIES:
+            logger.error("Timeout or max retries exceeded. Exiting.")
+            break
+        retries += 1
+        if run_status.status == "incomplete":
+            logger.debug(f"***** {run_status.incomplete_details}")
+            break
+        elif run_status.status == "failed":
+            logger.debug(f"***** {run_status.last_error}")
+            break
+        elif run_status.status == "requires_action":
             tool_calls = run_status.required_action.submit_tool_outputs.tool_calls
-            print(f"Tool calls received: {[tc.id for tc in tool_calls]}")  # DEBUG
-            outputs, extra_messages = handle_tool_calls(tool_calls, user_id)
+            logger.debug(f"Tool calls received: {[tc.id for tc in tool_calls]}")
+            outputs = handle_tool_calls(tool_calls, user_id)
 
             client.beta.threads.runs.submit_tool_outputs(
                 thread_id=thread.id,
                 run_id=run.id,
                 tool_outputs=outputs
             )
-
         elif run_status.status == "completed":
             break
+
+        time.sleep(1)
 
     messages = client.beta.threads.messages.list(thread_id=thread.id)
     response = messages.data[0].content[0].text.value
@@ -258,60 +281,45 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False):
     print("DEBUG: model_name =", user_info[user_id]["model_name"])
     print("DEBUG: serial_number =", user_info[user_id]["serial_number"])
 
+    # Transition to troubleshoot phase if info is complete
     if current_phase == "info" and user_info[user_id]["model_name"] and user_info[user_id]["serial_number"]:
+        
+        if not thread_vector["basic_info"]:
+            print("TURNING IT INTO TRUE")
+            thread_vector["basic_info"] = True
+            return response
+        
         print("✅ All information collected. Moving to troubleshooting...")
-        ask_troubleshoot_intent(user_id)
 
         model_name = user_info[user_id]["model_name"]
         serial_number = user_info[user_id]["serial_number"]
         print(f"MOVING TO TROUBLESHOOT for model {model_name} and serial number {serial_number}")
 
-        run = client.beta.threads.runs.create(
-            thread_id=thread.id,
-            assistant_id=assistant.id
-        )
         user_threads[user_id]["phase"] = "troubleshoot"
-
-        thread = client.beta.threads.create()
-        user_threads[user_id]["threads"]["troubleshoot"] = thread
-
-        client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=f"Now moving to troubleshooting for model {model_name} with serial number {serial_number}."
-        )
-
         assistant = assistants["troubleshoot"]
+
         run = client.beta.threads.runs.create(
             thread_id=thread.id,
-            assistant_id=assistant.id
+            assistant_id=assistant.id,
+            additional_instructions=f"The user's machine model is {model_name} and serial number is {serial_number}"
         )
 
-    extra_messages_to_send = []
+        # Poll again for troubleshoot phase
+        while True:
+            run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
 
-    while True:
-        run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+            if run_status.status == "requires_action":
+                tool_calls = run_status.required_action.submit_tool_outputs.tool_calls
+                outputs = handle_tool_calls(tool_calls, user_id)
 
-        if run_status.status == "requires_action":
-            tool_calls = run_status.required_action.submit_tool_outputs.tool_calls
-            outputs, extra_messages = handle_tool_calls(tool_calls, user_id)
+                client.beta.threads.runs.submit_tool_outputs(
+                    thread_id=thread.id,
+                    run_id=run.id,
+                    tool_outputs=outputs
+                )
+            elif run_status.status == "completed":
+                break
 
-            client.beta.threads.runs.submit_tool_outputs(
-                thread_id=thread.id,
-                run_id=run.id,
-                tool_outputs=outputs
-            )
-
-            extra_messages_to_send.extend(extra_messages)
-
-        elif run_status.status == "completed":
-            break
-
-    for msg in extra_messages_to_send:
-        client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=msg
-        )
+            time.sleep(1)
 
     return response

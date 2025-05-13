@@ -40,7 +40,7 @@ create_ticket_tool = {
                 },
                 "description": {
                     "type": "string",
-                    "description": "The full description of the problem. All the relevant info collected based on the conversation (for now), issues, what has been checked, etc."
+                    "description": "The full description of the problem."
                 }
             },
             "required": ["machine_id", "title", "description"]
@@ -66,7 +66,7 @@ edit_ticket_tool = {
                 },
                 "description": {
                     "type": "string",
-                    "description": "The new description for the ticket"
+                    "description": "The new description for the ticket.  All the relevant info collected based on the conversation (for now), issues, what has been checked, etc. Also if the ticket is solved, the SOLUTION should be added to the description."
                 }
             },
             "required": ["ticket_id", "title", "description"]

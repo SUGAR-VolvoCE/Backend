@@ -52,7 +52,7 @@ def create_assistants():
             "Provide steps one at a time. "
             "Use the 'edit_ticket_tool' to update the description of the ticket with every information you collected. Use it at LEAST ONCE to add all the new info you discovered about the problem."
             "Wait for user confirmation before giving the next step."
-            "If the issue is solved (if the user CONFIRMS it was solved), you can use the 'solve_ticket' tool to change the status of the ticket to solved. Also use the 'edit_ticket' tool to add the found problem and solution used."
+            "If the issue is solved (if the user CONFIRMS it was solved), you can use the 'solve_ticket' tool to change the status of the ticket to solved. ALWAYS use the 'edit_ticket' tool to add the found problem and solution used that solved it."
         ),
         model="gpt-4.1-mini",
         tools=[create_ticket_tool, edit_ticket_tool, solve_ticket_tool]
