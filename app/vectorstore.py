@@ -48,7 +48,38 @@ class Vectorstore:
 
     def similarity_search(self, query, machine_name, k=5):
         print(query)
-        index, id_to_text = self.load_machine_index(machine_name)
+        query_words = query.upper().split()
+
+        base_dir = Path(settings.FAISS_INDEX_ROOT) / machine_name
+        matched_pdf = None
+
+        # Look for any subdirectory whose name contains any word from the query
+        if base_dir.exists():
+            for subfolder in base_dir.iterdir():
+                if subfolder.is_dir():
+                    folder_name_upper = subfolder.name.upper()
+                    if any(word in folder_name_upper for word in query_words):
+                        matched_pdf = subfolder
+                        logger.info(f"Matched query word with folder: {subfolder.name}")
+                        break
+
+        # Use matched PDF index if found
+        if matched_pdf:
+            index_path = matched_pdf / "index.faiss"
+            mapping_path = matched_pdf / "index.pkl"
+        else:
+            # Fallback to machine-level index
+            index_path = base_dir / "index.faiss"
+            mapping_path = base_dir / "index.pkl"
+            logger.info(f"No folder matched. Using machine-level index for: {machine_name}")
+
+        if not index_path.exists() or not mapping_path.exists():
+            raise FileNotFoundError(f"Index or mapping not found at {index_path} or {mapping_path}")
+
+        index = faiss.read_index(str(index_path))
+        with open(mapping_path, "rb") as f:
+            id_to_text = pickle.load(f)
+
         embedding = self.embeddings_provider.embed_query(query)
         D, I = index.search(np.array([embedding]).astype("float32"), k)
-        return [Document(page_content=id_to_text[i]) for i in I[0]]  # ✅ return Document objects
+        return [Document(page_content=id_to_text[i]) for i in I[0] if i in id_to_text]

@@ -7,102 +7,114 @@ from PyPDF2 import PdfReader
 from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-
+# === Load environment ===
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # === CONFIGURATION ===
-PDFS_ROOT = "data/manuals"  # 📂 Folder containing machine folders
+PDFS_ROOT = "data/manuals"
 INDEX_ROOT = "data/faiss_index"
-CHUNK_SIZE = 500
-CHUNK_OVERLAP = 100
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 200
+BATCH_SIZE = 20
+EMBEDDING_MODEL = "text-embedding-ada-002"
 
-def get_embedding(text: str, model="text-embedding-ada-002"):
-    text = text.replace("\n", " ")  
-    response = client.embeddings.create(input=[text], model=model)
-    return response.data[0].embedding
+# === Functions ===
 
-def read_pdf_chunks(path):
-    reader = PdfReader(path)
-    all_text = " ".join([page.extract_text() or "" for page in reader.pages])
+def get_embeddings_batch(texts, model=EMBEDDING_MODEL):
+    cleaned_texts = [t.replace("\n", " ") for t in texts]
+    response = client.embeddings.create(input=cleaned_texts, model=model)
+    return [r.embedding for r in response.data]
 
-    # Use a smarter splitter
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100,
+def read_pdf_chunks(pdf_path):
+    try:
+        reader = PdfReader(pdf_path)
+        text = " ".join([page.extract_text() or "" for page in reader.pages])
+        if not text.strip():
+            print(f"⚠️ Skipping {pdf_path}: no extractable text.")
+            return []
+    except Exception as e:
+        print(f"❌ Failed to read {pdf_path}: {e}")
+        return []
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
         separators=["\n\n", "\n", ".", " ", ""]
     )
-    chunks = text_splitter.split_text(all_text)
-    return chunks
-
+    return splitter.split_text(text)
 
 def embed_chunks(chunks):
     embeddings = []
-    for i, chunk in enumerate(chunks):
+    for i in range(0, len(chunks), BATCH_SIZE):
+        batch = chunks[i:i + BATCH_SIZE]
         try:
-            emb = get_embedding(chunk, model="text-embedding-ada-002")
-            embeddings.append((i, emb))
+            batch_embeddings = get_embeddings_batch(batch)
+            embeddings.extend([(i + j, emb) for j, emb in enumerate(batch_embeddings)])
         except Exception as e:
-            print(f"Skipping chunk {i}: {e}")
+            print(f"❌ Error embedding batch at chunk {i}: {e}")
     return embeddings
 
-def build_faiss_index(all_embeddings):
-    dimension = len(all_embeddings[0][1])
-    index = faiss.IndexFlatL2(dimension)
-    vectors = np.array([emb for _, emb in all_embeddings]).astype("float32")
+def build_faiss_index(embeddings):
+    dim = len(embeddings[0][1])
+    index = faiss.IndexFlatL2(dim)
+    vectors = np.array([emb for _, emb in embeddings], dtype="float32")
     index.add(vectors)
     return index
 
-def find_all_pdfs(root_folder):
-    pdf_files = []
-    for dirpath, dirnames, filenames in os.walk(root_folder):
-        for file in filenames:
-            if file.lower().endswith(".pdf"):
-                pdf_files.append(os.path.join(dirpath, file))
-    return pdf_files
+def find_all_pdfs(root_dir):
+    return [
+        os.path.join(dirpath, file)
+        for dirpath, _, files in os.walk(root_dir)
+        for file in files
+        if file.lower().endswith(".pdf")
+    ]
 
 def process_machine(machine_name):
-    pdf_folder = os.path.join(PDFS_ROOT, machine_name)
-    index_folder = os.path.join(INDEX_ROOT, machine_name)
+    print(f"\n🔧 Processing machine: {machine_name}")
+    pdf_dir = os.path.join(PDFS_ROOT, machine_name)
+    index_root = os.path.join(INDEX_ROOT, machine_name)
+    os.makedirs(index_root, exist_ok=True)
 
-    os.makedirs(index_folder, exist_ok=True)
-
-    all_chunks = []
-    all_embeddings = []
-    id_to_text = {}
-    global_chunk_id = 0
-
-    pdf_files = find_all_pdfs(pdf_folder)
-    print(f"Found {len(pdf_files)} PDFs inside {machine_name}")
+    pdf_files = find_all_pdfs(pdf_dir)
+    print(f"📄 Found {len(pdf_files)} PDFs.")
 
     for pdf_path in pdf_files:
-        print(f"Reading {os.path.relpath(pdf_path, PDFS_ROOT)}...")
-        chunks = read_pdf_chunks(pdf_path)
+        pdf_name = os.path.splitext(os.path.basename(pdf_path))[0]
+        print(f"\n→ Reading PDF: {pdf_name}")
 
-        print(f"Embedding {len(chunks)} chunks from {os.path.basename(pdf_path)}...")
+        chunks = read_pdf_chunks(pdf_path)
+        if not chunks:
+            continue
+
+        print(f"   Embedding {len(chunks)} chunks...")
         embeddings = embed_chunks(chunks)
 
-        for (local_idx, emb) in embeddings:
-            all_embeddings.append((global_chunk_id, emb))
-            id_to_text[global_chunk_id] = chunks[local_idx]
-            global_chunk_id += 1
+        if not embeddings:
+            print(f"⚠️ Skipping {pdf_name}: no valid embeddings.")
+            continue
 
-    print(f"Total chunks embedded for {machine_name}: {len(all_embeddings)}")
+        index_dir = os.path.join(index_root, pdf_name)
+        os.makedirs(index_dir, exist_ok=True)
 
-    print("Building FAISS index...")
-    index = build_faiss_index(all_embeddings)
+        print(f"🔨 Building FAISS index for {pdf_name}...")
+        index = build_faiss_index(embeddings)
 
-    print("Saving index...")
-    faiss.write_index(index, os.path.join(index_folder, "index.faiss"))
+        id_to_text = {
+            global_id: chunks[local_id]
+            for global_id, (local_id, _) in enumerate(embeddings)
+        }
 
-    print("Saving text mapping...")
-    with open(os.path.join(index_folder, "index.pkl"), "wb") as f:
-        pickle.dump(id_to_text, f)
+        print(f"💾 Saving index to {index_dir}...")
+        faiss.write_index(index, os.path.join(index_dir, "index.faiss"))
+        with open(os.path.join(index_dir, "index.pkl"), "wb") as f:
+            pickle.dump(id_to_text, f)
 
-    print(f"✅ Done! Index and mapping saved for {machine_name}.")
+        print(f"✅ Finished processing: {pdf_name}")
+
 
 def main():
-    machine_name = "EC220D"  # 👈 Machine folder name
+    machine_name = "WLOL60H"  # 👈 Change this to target a different folder
     process_machine(machine_name)
 
 if __name__ == "__main__":

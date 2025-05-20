@@ -41,7 +41,7 @@ def create_machine(user_id: int, model: str, serial_number: str):
 
 def match_model(model_name: str, user_id: int):
     # Validate against known models
-    valid_models = ["EC220D", "EC250E", "EC300E"]
+    valid_models = ["EC220D", "WLOL60H"]
     valid = model_name.upper() in valid_models
     if valid:
         machines_result = search_machines_by_model(user_id, model_name)
