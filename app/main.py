@@ -2,22 +2,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from pydantic import BaseModel
 from .schema import ChatRequest
+from fastapi.middleware.cors import CORSMiddleware
 from .orchestrator import chat_with_assistant
 
 app = FastAPI()
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace "*" with specific origins if needed
+    allow_origins=["http://localhost:3000"],  # React dev server
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
 
 # Define request body structure
 class ChatRequest(BaseModel):
-    user_id: str  # Add the user_id here
+    user_id: int  # Add the user_id here
     message: str
     reset: bool = False
 

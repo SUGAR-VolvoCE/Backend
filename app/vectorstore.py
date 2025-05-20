@@ -52,4 +52,3 @@ class Vectorstore:
         embedding = self.embeddings_provider.embed_query(query)
         D, I = index.search(np.array([embedding]).astype("float32"), k)
         return [Document(page_content=id_to_text[i]) for i in I[0]]  # ✅ return Document objects
-

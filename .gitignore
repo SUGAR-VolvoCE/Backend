@@ -1,4 +1,5 @@
 .env
+data/manuals
 app/__pycache__/
 .bash_history
 .venv/
