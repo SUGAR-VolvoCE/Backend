@@ -2,12 +2,15 @@ import openai
 import time
 import json
 import os
+import uuid
+from datetime import datetime, timezone
 from typing import Dict, List, Tuple
 from app.tools.rag_tool import search_manuals
 from app.tools.report_tool import create_ticket, edit_ticket, solve_ticket
 from app.tools.info_tool import match_model, match_serial_number, create_machine
 import time
 from .logger import logger
+from .routes import ConversationMessage, add_conversation
 
 client = openai.OpenAI()
 
@@ -26,6 +29,7 @@ assistants = {
 user_threads = {}
 user_info = {}
 tickets_info = {}
+custom_thread_id = {}
 
 tool_function_map = {
     "match_model": match_model,
@@ -139,6 +143,7 @@ def handle_tool_calls(tool_calls, user_id) -> Tuple[List[Dict], List[str]]:
                             "resolved": ticket_data.get("resolved")
                         })
                     elif tool_name == "create_ticket":
+                  
                         try:
                             ticket_data = result.get("ticket", {})
                             
@@ -187,18 +192,6 @@ def handle_tool_calls(tool_calls, user_id) -> Tuple[List[Dict], List[str]]:
 
     return outputs
 
-
-def get_or_create_thread(user_id: str, reset: bool):
-    if user_id not in user_threads:
-        user_threads[user_id] = {"phase": "info", "threads": {}}
-    if reset:
-        thread = client.beta.threads.create()
-        user_threads[user_id]["phase"] = "info"
-        user_threads[user_id]["thread"]["object"] = thread
-        user_threads[user_id]["thread"]["basic_info"] = False
-
-    return [user_threads[user_id]["thread"],user_threads[user_id]["thread"]["object"]]
-
 def get_or_create_thread(user_id: str, reset: bool):
     if user_id not in user_threads:
         user_threads[user_id] = {"phase": "info", "threads": {}}
@@ -211,8 +204,10 @@ def get_or_create_thread(user_id: str, reset: bool):
     return [user_threads[user_id]["threads"], user_threads[user_id]["threads"]["object"]]
 
 
-def chat_with_assistant(user_id: str, message: str, reset: bool = False):
+def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_url: str = None):
     if reset or user_id not in user_threads:
+        tickets_info[user_id] = {}
+        custom_thread_id[user_id] = str(uuid.uuid4())
         user_threads[user_id] = {"phase": "info", "threads": {}}
         user_info[user_id] = {"model_name": None, "serial_number": None, "machine_name": None}
 
@@ -246,6 +241,21 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False):
 
     retries = 0
     MAX_RETRIES = 30
+
+    # *** Save user message to your DB with custom thread_id and ticket_id ***
+    try:
+        db_message = ConversationMessage(
+            thread_id=custom_thread_id[user_id],
+            ticket_id=tickets_info[user_id].get("ticket_id") if user_id in tickets_info else None,
+            sender="user",
+            message=message,
+            media_url=file_url,
+            timestamp=datetime.now(timezone.utc)  # Provide timestamp here
+
+        )
+        add_conversation(db_message)
+    except Exception as e:
+        logger.debug(f"Error saving user message: {str(e)}")
 
     while True:
         run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
@@ -287,7 +297,7 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False):
         if not thread_vector["basic_info"]:
             print("TURNING IT INTO TRUE")
             thread_vector["basic_info"] = True
-            return response
+            return response, None
         
         print("✅ All information collected. Moving to troubleshooting...")
 
@@ -322,4 +332,19 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False):
 
             time.sleep(1)
 
-    return response
+    try:
+        db_message = ConversationMessage(
+            thread_id=custom_thread_id[user_id],
+            ticket_id=tickets_info[user_id].get("ticket_id") if user_id in tickets_info else None,
+            sender="assistant",
+            message=response,
+            media_url=None,
+            timestamp=datetime.now(timezone.utc)  # Provide timestamp here
+        )
+        add_conversation(db_message)
+    except Exception as e:
+        logger.debug(f"Error saving assistant message: {str(e)}")
+
+    # FOR NOW: NONE
+    image_url = "https://res.cloudinary.com/dn8rj0auz/image/upload/v1747802251/w0aarhdfeohfs8xnthtz.png"
+    return response, image_url
