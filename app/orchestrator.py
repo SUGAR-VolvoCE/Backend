@@ -8,6 +8,7 @@ from typing import Dict, List, Tuple
 from app.tools.rag_tool import search_manuals
 from app.tools.report_tool import create_ticket, edit_ticket, solve_ticket
 from app.tools.info_tool import match_model, match_serial_number, create_machine
+from app.yolo.yolo_tool import detect_yolo
 import time
 from .logger import logger
 from .routes import ConversationMessage, add_conversation
@@ -212,6 +213,7 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
         user_info[user_id] = {"model_name": None, "serial_number": None, "machine_name": None}
 
     current_phase = user_threads[user_id]["phase"]
+    image_url = None
 
     if current_phase not in assistants:
         print(f"Warning: phase '{current_phase}' not found. Falling back to 'info'.")
@@ -228,21 +230,7 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
             content="Forget previous conversations. Start fresh."
         )
 
-    client.beta.threads.messages.create(
-        thread_id=thread.id,
-        role="user",
-        content=message
-    )
-
-    run = client.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=assistant.id
-    )
-
-    retries = 0
-    MAX_RETRIES = 30
-
-    # *** Save user message to your DB with custom thread_id and ticket_id ***
+            # *** Save user message to your DB with custom thread_id and ticket_id ***
     try:
         db_message = ConversationMessage(
             thread_id=custom_thread_id[user_id],
@@ -256,6 +244,43 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
         add_conversation(db_message)
     except Exception as e:
         logger.debug(f"Error saving user message: {str(e)}")
+    
+    if file_url:
+        try:
+            result = detect_yolo(file_url)  # result is a dict
+            detections = result["detections"]
+            print(detections)
+
+            image_url = result["annotated_image_url"]
+            print(image_url)
+
+            if detections:
+                detected_text = "\n".join([
+                    f"- {label} at {location}"
+                    for label, location in detections
+                ])
+                print(detected_text)
+
+                message += f"System analysis of image (not user input):\n\n**Detected Issues:**\n{detected_text}\n\n**Annotated Image:** {image_url}"
+            else:
+                message += "System analysis of image (not user input): \n\n✅ No issues detected with confidence above 25% in the image (from the image uploaded)."
+
+        except Exception as e:
+            message += f"System analysis of image \n\n❌ Error processing image: {e}"
+
+    client.beta.threads.messages.create(
+        thread_id=thread.id,
+        role="user",
+        content=message
+    )
+
+    run = client.beta.threads.runs.create(
+        thread_id=thread.id,
+        assistant_id=assistant.id
+    )
+
+    retries = 0
+    MAX_RETRIES = 30
 
     while True:
         run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
@@ -338,7 +363,7 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
             ticket_id=tickets_info[user_id].get("ticket_id") if user_id in tickets_info else None,
             sender="assistant",
             message=response,
-            media_url=None,
+            media_url=image_url,
             timestamp=datetime.now(timezone.utc)  # Provide timestamp here
         )
         add_conversation(db_message)
@@ -346,5 +371,4 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
         logger.debug(f"Error saving assistant message: {str(e)}")
 
     # FOR NOW: NONE
-    image_url = "https://res.cloudinary.com/dn8rj0auz/image/upload/v1747802251/w0aarhdfeohfs8xnthtz.png"
     return response, image_url
