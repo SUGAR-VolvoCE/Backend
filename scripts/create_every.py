@@ -76,6 +76,14 @@ def process_machine(machine_name):
     index_root = os.path.join(INDEX_ROOT, machine_name)
     os.makedirs(index_root, exist_ok=True)
 
+    print("🔍 cwd:", os.getcwd())
+    print("🔍 PDFS_ROOT →", os.path.abspath(PDFS_ROOT))
+    print("🔍 looking in:", os.path.abspath(pdf_dir))
+    print("🔍 exists?", os.path.isdir(pdf_dir))
+    if os.path.isdir(pdf_dir):
+        print("🔍 contains:", os.listdir(pdf_dir))
+
+
     pdf_files = find_all_pdfs(pdf_dir)
     print(f"📄 Found {len(pdf_files)} PDFs.")
 
@@ -114,7 +122,7 @@ def process_machine(machine_name):
 
 
 def main():
-    machine_name = "WLOL60H"  # 👈 Change this to target a different folder
+    machine_name = "WLO70H"  # 👈 Change this to target a different folder
     process_machine(machine_name)
 
 if __name__ == "__main__":
