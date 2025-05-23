@@ -9,9 +9,13 @@ from app.tools.rag_tool import search_manuals
 from app.tools.report_tool import create_ticket, edit_ticket, solve_ticket
 from app.tools.info_tool import match_model, match_serial_number, create_machine
 from app.yolo.yolo_tool import detect_yolo
+from app.utils import replace_image_placeholders
 import time
 from .logger import logger
 from .routes import ConversationMessage, add_conversation
+
+CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dn8rj0auz/image/upload"
+UPLOAD_PRESET = "sugar-2025"
 
 client = openai.OpenAI()
 
@@ -312,6 +316,23 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
 
     messages = client.beta.threads.messages.list(thread_id=thread.id)
     response = messages.data[0].content[0].text.value
+    # response, img = replace_image_placeholders(response, image_dir="data/static/images", markdown=True)
+
+    # if img:
+    #     image_url = img[0]
+    #     print("DEBUG: Image URL =", image_url)
+    #     #Cloudinary upload
+    #     files = {"file": image_url}
+    #     data = {"upload_preset": UPLOAD_PRESET}
+    #     upload_res = requests.post(CLOUDINARY_URL, files=files, data=data)
+    #     if upload_res.status_code != 200:
+    #         print("Error uploading image to Cloudinary:", upload_res.json())
+    #         image_url = None
+        
+    #     image_url = upload_res.json().get("secure_url")
+    #     print("DEBUG: Annotated Image URL =", image_url)
+
+
 
     print("DEBUG: model_name =", user_info[user_id]["model_name"])
     print("DEBUG: serial_number =", user_info[user_id]["serial_number"])

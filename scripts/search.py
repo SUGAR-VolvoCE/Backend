@@ -11,8 +11,8 @@ api_key = OPENAI_API_KEY  # replace with settings.API_KEY if using settings
 embeddings_provider = OpenAIEmbeddings(api_key=api_key)
 
 # Paths
-index_path = 'data/faiss_index/WLOL60H/index.faiss'
-pkl_path = 'data/faiss_index/WLOL60H/index.pkl'
+index_path = 'data/faiss_index/WLO70H/Guided_Diagnostics_Engine_overheating/index.faiss'
+pkl_path = 'data/faiss_index/WLO70H/Guided_Diagnostics_Engine_overheating/index.pkl'
 
 # Load FAISS index
 def load_faiss_index(index_path):
@@ -38,7 +38,7 @@ def search_faiss_index(index, query_vector, k=5):
     return D, I
 
 # === MAIN ===
-query_str = "P100A11"  # Now this will properly match existing embeddings
+query_str = "temperature"  # Now this will properly match existing embeddings
 query_vector = generate_query_vector(query_str)
 
 # Load index and metadata
