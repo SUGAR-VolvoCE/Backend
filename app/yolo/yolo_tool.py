@@ -36,6 +36,22 @@ def get_location_label(x_center, y_center, width, height):
 
     return f"{vert}-{horiz}"
 
+def iou(boxA, boxB):
+    # Compute intersection-over-union for overlap filtering
+    xA = max(boxA["x1"], boxB["x1"])
+    yA = max(boxA["y1"], boxB["y1"])
+    xB = min(boxA["x2"], boxB["x2"])
+    yB = min(boxA["y2"], boxB["y2"])
+
+    interArea = max(0, xB - xA) * max(0, yB - yA)
+    if interArea == 0:
+        return 0
+
+    boxAArea = (boxA["x2"] - boxA["x1"]) * (boxA["y2"] - boxA["y1"])
+    boxBArea = (boxB["x2"] - boxB["x1"]) * (boxB["y2"] - boxB["y1"])
+
+    return interArea / float(boxAArea + boxBArea - interArea)
+
 def detect_yolo(image_url):
     response = requests.get(image_url)
     img = Image.open(BytesIO(response.content)).convert('RGB')
@@ -47,14 +63,55 @@ def detect_yolo(image_url):
 
     detections = []
 
-    for box in results_best.boxes:
+    wire_detections = []
+    for box in results_wire.boxes:
         conf = float(box.conf)
-        cls_id = int(box.cls)
-        class_name = model_best.names[cls_id]
-        print(class_name)
+        if conf < 0.25:
+            continue
 
-        if conf >= 0.25:
+        cls_id = int(box.cls)
+        class_name = model_wire.names[cls_id]
+
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        x_center = (x1 + x2) // 2
+        y_center = (y1 + y2) // 2
+        location = get_location_label(x_center, y_center, width, height)
+
+        wire_detections.append({
+            "label": class_name,
+            "location": location,
+            "confidence": round(conf, 2),
+            "box": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
+        })
+
+    # If there are wire detections, prioritize them
+    if wire_detections:
+        # Filter overlapping wire detections (non-maximum suppression by IOU)
+        final_detections = []
+        wire_detections.sort(key=lambda d: d["confidence"], reverse=True)
+
+        for det in wire_detections:
+            if all(iou(det["box"], kept["box"]) < 0.5 for kept in final_detections):
+                final_detections.append(det)
+                x1, y1, x2, y2 = det["box"].values()
+                label_text = f"Wire: {det['label']}"
+                cv2.rectangle(img_array, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                cv2.putText(img_array, label_text, (x1, y2 + 15),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
+        detections = final_detections
+
+    else:
+        # Fallback to best model detections
+        for box in results_best.boxes:
+            conf = float(box.conf)
+            if conf < 0.25:
+                continue
+
+            cls_id = int(box.cls)
+            class_name = model_best.names[cls_id]
             english_label = LABEL_MAP.get(class_name, class_name)
+
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             x_center = (x1 + x2) // 2
             y_center = (y1 + y2) // 2
@@ -71,31 +128,7 @@ def detect_yolo(image_url):
             cv2.putText(img_array, english_label, (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-    for box in results_wire.boxes:
-        conf = float(box.conf)
-        cls_id = int(box.cls)
-        class_name = model_wire.names[cls_id]
-        print("CLASS: ", class_name)
-
-        if conf >= 0.25:
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            x_center = (x1 + x2) // 2
-            y_center = (y1 + y2) // 2
-            location = get_location_label(x_center, y_center, width, height)
-
-            detections.append({
-                "label": class_name,  # mantém o nome original
-                "location": location,
-                "confidence": round(conf, 2),
-                "box": {"x1": x1, "y1": y1, "x2": x2, "y2": y2}
-            })
-
-            label_text = f"Wire: {class_name}"
-            cv2.rectangle(img_array, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            cv2.putText(img_array, label_text, (x1, y2 + 15),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-
-
+    # Upload the annotated image
     is_success, buffer = cv2.imencode(".jpg", cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR))
     if not is_success:
         return {"error": "Failed to encode annotated image"}
