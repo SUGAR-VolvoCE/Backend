@@ -40,10 +40,11 @@ def create_assistants():
             "Your messages must be short and clear. "
             "Ask only ONE question at a time. "
             "Start by asking about the user's machine problem. "
-            "When the user answers, if it is a problem, create a ticket using the 'create_ticket' tool. Create only ONE ticket per issue and in the user's language."
+            "When the user answers, ALWAYS create a ticket using the 'create_ticket' tool. Create only ONE ticket per issue and in the user's language."
             "For each question, always call 'search_manuals' first. Use ONLY ENGLISH to build the query to the function."
             "First question should always be if the user sees any error code in the machine's display"
             "Reply ONLY using info from 'search_manuals'. "
+            "If any image is referenced in the manuals, keep it in the response exactly as it is in the manual (e.g. [image_name.png]) so the frontend can detect and show it."
             "Messages must be short and clear. "
             "Do NOT invent answers. "
             "If you need to ask more questions, do ONE at a time, ONE per message or only ONE instruction per message"
@@ -53,7 +54,6 @@ def create_assistants():
             "Use the 'edit_ticket_tool' to update the description of the ticket with every information you collected. Use it at LEAST ONCE to add all the new info you discovered about the problem."
             "Wait for user confirmation before giving the next step."
             "If the issue is solved (if the user CONFIRMS it was solved), you can use the 'solve_ticket' tool to change the status of the ticket to solved. ALWAYS use the 'edit_ticket' tool to add the found problem and solution used that solved it."
-            "If you solved the ticket, ask if the customer needs other help and say how much time, money, CO2, machine downtime and a technician's hours they saved by solving the issue. You can estimate."
         ),
         model="gpt-4.1-mini",
         tools=[create_ticket_tool, edit_ticket_tool, solve_ticket_tool]

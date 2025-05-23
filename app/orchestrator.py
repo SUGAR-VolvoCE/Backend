@@ -2,6 +2,8 @@ import openai
 import time
 import json
 import os
+import requests
+from app.utils.replace_image_placeholders import process_text_return_image_url
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple
@@ -316,23 +318,7 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
 
     messages = client.beta.threads.messages.list(thread_id=thread.id)
     response = messages.data[0].content[0].text.value
-    # response, img = replace_image_placeholders(response, image_dir="data/static/images", markdown=True)
-
-    # if img:
-    #     image_url = img[0]
-    #     print("DEBUG: Image URL =", image_url)
-    #     #Cloudinary upload
-    #     files = {"file": image_url}
-    #     data = {"upload_preset": UPLOAD_PRESET}
-    #     upload_res = requests.post(CLOUDINARY_URL, files=files, data=data)
-    #     if upload_res.status_code != 200:
-    #         print("Error uploading image to Cloudinary:", upload_res.json())
-    #         image_url = None
-        
-    #     image_url = upload_res.json().get("secure_url")
-    #     print("DEBUG: Annotated Image URL =", image_url)
-
-
+    response, image_url = process_text_return_image_url(response, image_dir="data/static/images")
 
     print("DEBUG: model_name =", user_info[user_id]["model_name"])
     print("DEBUG: serial_number =", user_info[user_id]["serial_number"])

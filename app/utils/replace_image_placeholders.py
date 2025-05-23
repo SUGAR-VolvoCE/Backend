@@ -1,50 +1,54 @@
-# import os
-# import re
-# from PIL import Image
+import os
+import re
+from io import BytesIO
+import requests
+from PIL import Image
+from difflib import get_close_matches
 
-# def replace_image_placeholders(
-#     text, 
-#     image_dir="/data/static/images", 
-#     markdown=True, 
-#     missing_policy="warn",
-#     pillow=False
-# ):
-#     """
-#     Replace [image_name.png] with Markdown or HTML image references.
-#     - markdown: if True, output ![image_name](/images/image_name.png), else <img ...>
-#     - missing_policy: 'warn' replaces missing with '[Missing image: ...]', 'skip' removes the tag
-#     """
-#     imgs = []
-#     def replacer(match):
-#         filename = match.group(1)
-#         filepath = os.path.join(image_dir, filename)
-#         # Check file exists (optional for fallback)
-#         if not os.path.isfile(filepath):
-#             if missing_policy == "warn":
-#                 return f"[Missing image: {filename}]"
-#             elif missing_policy == "skip":
-#                 return ""
-#         if markdown:
-#             imgs.append(filename)
-#             if pillow:
-#                 try:
-#                     filepath = os.path.join(image_dir, filename)
-#                     img = Image.open(filepath) # Replace "image.jpg" with the actual path
-#                     img.show() # Displays the image
-#                 except FileNotFoundError:
-#                     print("Image file not found")
-#                 except Exception as e:
-#                     print(f"Error opening image: {e}")
-        
-#             return f"![{filename}](\/images\/{filename})"
-#         else:
-#             return f'<img src="/images/{filename}" alt="{filename}" style="max-width:100%;"/>'
-#     pattern = r"\[([\w\-]+\.(?:png|jpg|jpeg|gif))\]"
-#     return re.sub(pattern, replacer, text), imgs
+CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dn8rj0auz/image/upload"
+UPLOAD_PRESET = "sugar-2025"
 
-# # Example usage
-# text = "I want to show you this image: [teste.png] and this one: [missing_image.png]."
-# image_dir = "data/static/images"
-# text, imgs = replace_image_placeholders(text, image_dir, markdown=True, missing_policy="warn", pillow=True)
-# print(text)
-# print(imgs)
+def process_text_return_image_url(text, image_dir="data/static/images"):
+    all_images = os.listdir(image_dir)
+    uploaded_urls = {}
+
+    def upload_to_cloudinary(filepath):
+        with Image.open(filepath) as img:
+            buffer = BytesIO()
+            img.save(buffer, format=img.format)
+            buffer.seek(0)
+            files = {"file": buffer}
+            data = {"upload_preset": UPLOAD_PRESET}
+            response = requests.post(CLOUDINARY_URL, files=files, data=data)
+            if response.status_code == 200:
+                return response.json().get("secure_url")
+            else:
+                return None
+
+    image_url = None
+
+    def replacer(match):
+        nonlocal image_url
+        requested_filename = match.group(1)
+        closest = get_close_matches(requested_filename, all_images, n=1)
+        if not closest:
+            return "[Missing image]"
+        closest_file = closest[0]
+        local_path = os.path.join(image_dir, closest_file)
+        if closest_file not in uploaded_urls:
+            url = upload_to_cloudinary(local_path)
+            if url:
+                uploaded_urls[closest_file] = url
+                # Save only the first uploaded URL to return
+                if image_url is None:
+                    image_url = url
+            else:
+                return "[Upload failed]"
+        else:
+            if image_url is None:
+                image_url = uploaded_urls[closest_file]
+        return ""
+
+    pattern = r"\[([\w\-]+\.(?:png|jpg|jpeg|gif))\]"
+    new_text = re.sub(pattern, replacer, text)
+    return new_text, image_url
