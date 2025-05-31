@@ -10,8 +10,9 @@ from typing import Dict, List, Tuple
 from app.tools.rag_tool import search_manuals
 from app.tools.report_tool import create_ticket, edit_ticket, solve_ticket
 from app.tools.info_tool import match_model, match_serial_number, create_machine
-from app.yolo.yolo_tool import detect_yolo
+from app.yolo.yolo_tool import YoloDetector
 from app.utils import replace_image_placeholders
+
 import time
 from .logger import logger
 from .routes import ConversationMessage, add_conversation
@@ -20,6 +21,15 @@ CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dn8rj0auz/image/upload"
 UPLOAD_PRESET = "sugar-2025"
 
 client = openai.OpenAI()
+
+detector = YoloDetector(
+        api_url="https://detect.roboflow.com",
+        api_key="BKDg8IoE7QqBivQ89Oyu",
+        model_id="hose-jbybw/1",
+        cloudinary_url="https://api.cloudinary.com/v1_1/dn8rj0auz/image/upload",
+        upload_preset="sugar-2025"
+)
+
 
 assistant_ids = {
     "info": os.getenv("INFO_ASSISTANT_ID"),
@@ -248,24 +258,9 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
         )
 
          
-   # *** Save user message to your DB with custom thread_id and ticket_id ***
-    try:
-        db_message = ConversationMessage(
-            thread_id=custom_thread_id[user_id],
-            ticket_id=tickets_info[user_id].get("ticket_id") if user_id in tickets_info else None,
-            sender="user",
-            message=message,
-            media_url=file_url,
-            timestamp=datetime.now(timezone.utc)  # Provide timestamp here
-
-        )
-        add_conversation(db_message)
-    except Exception as e:
-        logger.debug(f"Error saving user message: {str(e)}")
-    
     if file_url:
         try:
-            result = detect_yolo(file_url)  # result is a dict
+            result = detector.detect_yolo(file_url)  # result is a dict
             detections = result["detections"]
             print(detections)
 
@@ -274,9 +269,10 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
             print(image_url)
 
             if detections:
+                print("Entering if detections block")
                 detected_text = "\n".join([
-                    f"- {label} at {location}"
-                    for label, location in detections
+                    f"- {label} at {location} (confidence {conf:.2f})"
+                    for label, location, conf in detections
                 ])
                 print(detected_text)
 
@@ -343,19 +339,6 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
 
     if image_url_text:
         image_url = image_url_text
-
-    try:
-        db_message = ConversationMessage(
-            thread_id=custom_thread_id[user_id],
-            ticket_id=tickets_info[user_id].get("ticket_id") if user_id in tickets_info else None,
-            sender="assistant",
-            message=response,
-            media_url=image_url,
-            timestamp=datetime.now(timezone.utc)  # Provide timestamp here
-        )
-        add_conversation(db_message)
-    except Exception as e:
-        logger.debug(f"Error saving assistant message: {str(e)}")
 
     # FOR NOW: NONE
     return response, image_url
