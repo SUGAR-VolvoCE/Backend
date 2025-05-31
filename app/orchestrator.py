@@ -62,6 +62,7 @@ def handle_tool_calls(tool_calls, user_id) -> Tuple[List[Dict], List[str]]:
 
         # Add the tool call id to the processed set
         processed_ids.add(tool_call.id)
+        print(tool_name)
 
         try:
             # Check if the tool_name is in the map of tool functions
@@ -201,30 +202,40 @@ def handle_tool_calls(tool_calls, user_id) -> Tuple[List[Dict], List[str]]:
 
 def get_or_create_thread(user_id: str, reset: bool):
     if user_id not in user_threads:
-        user_threads[user_id] = {"phase": "info", "threads": {}}
+        user_threads[user_id] = {"phase": "troubleshoot", "threads": {}}
     if reset or "object" not in user_threads[user_id]["threads"]:
         thread = client.beta.threads.create()
-        user_threads[user_id]["phase"] = "info"
+        user_threads[user_id]["phase"] = "troubleshoot"
         user_threads[user_id]["threads"]["object"] = thread
-        user_threads[user_id]["threads"]["basic_info"] = False
+        user_threads[user_id]["threads"]["basic_info"] = True
 
     return [user_threads[user_id]["threads"], user_threads[user_id]["threads"]["object"]]
 
 
 def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_url: str = None):
     if reset or user_id not in user_threads:
+
         tickets_info[user_id] = {}
         custom_thread_id[user_id] = str(uuid.uuid4())
-        user_threads[user_id] = {"phase": "info", "threads": {}}
-        user_info[user_id] = {"model_name": None, "serial_number": None, "machine_name": None}
+        user_threads[user_id] = {"phase": "troubleshoot", "threads": {}}
+        try:
+            if user_id not in user_info:
+                user_info[user_id] = {}
+
+            user_info[user_id]["model_name"] = "WLOL60H"
+            user_info[user_id]["serial_number"] = "VCEWLOL60H123092"
+            user_info[user_id]["machine_id"] = 49  # store as int, not string
+            print("reseting")
+
+        except Exception as e:
+            logger.exception("Error saving reset details")  # logs traceback
+
+    print("DEBUG: model_name =", user_info[user_id]["model_name"])
+    print("DEBUG: serial_number =", user_info[user_id]["serial_number"])
 
     current_phase = user_threads[user_id]["phase"]
+    print(current_phase)
     image_url = None
-
-    if current_phase not in assistants:
-        print(f"Warning: phase '{current_phase}' not found. Falling back to 'info'.")
-        current_phase = "info"
-        user_threads[user_id]["phase"] = "info"
 
     assistant = assistants[current_phase]
     thread_vector, thread = get_or_create_thread(user_id, reset)
@@ -236,7 +247,8 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
             content="Forget previous conversations. Start fresh."
         )
 
-            # *** Save user message to your DB with custom thread_id and ticket_id ***
+         
+   # *** Save user message to your DB with custom thread_id and ticket_id ***
     try:
         db_message = ConversationMessage(
             thread_id=custom_thread_id[user_id],
@@ -281,10 +293,18 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
         content=message
     )
 
-    run = client.beta.threads.runs.create(
-        thread_id=thread.id,
-        assistant_id=assistant.id
-    )
+    if reset:
+            run = client.beta.threads.runs.create(
+            thread_id=thread.id,
+            assistant_id=assistant.id,
+            additional_instructions=f"The user's machine model is {user_info[user_id]["model_name"]} and serial number is {user_info[user_id]["serial_number"]}. You don't need to confirm, just help with the problem."
+        )
+            
+    else:
+        run = client.beta.threads.runs.create(
+                thread_id=thread.id,
+                assistant_id=assistant.id
+            )
 
     retries = 0
     MAX_RETRIES = 30
@@ -323,50 +343,6 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
 
     if image_url_text:
         image_url = image_url_text
-
-    print("DEBUG: model_name =", user_info[user_id]["model_name"])
-    print("DEBUG: serial_number =", user_info[user_id]["serial_number"])
-
-    # Transition to troubleshoot phase if info is complete
-    if current_phase == "info" and user_info[user_id]["model_name"] and user_info[user_id]["serial_number"]:
-        
-        if not thread_vector["basic_info"]:
-            print("TURNING IT INTO TRUE")
-            thread_vector["basic_info"] = True
-            return response, None
-        
-        print("✅ All information collected. Moving to troubleshooting...")
-
-        model_name = user_info[user_id]["model_name"]
-        serial_number = user_info[user_id]["serial_number"]
-        print(f"MOVING TO TROUBLESHOOT for model {model_name} and serial number {serial_number}")
-
-        user_threads[user_id]["phase"] = "troubleshoot"
-        assistant = assistants["troubleshoot"]
-
-        run = client.beta.threads.runs.create(
-            thread_id=thread.id,
-            assistant_id=assistant.id,
-            additional_instructions=f"The user's machine model is {model_name} and serial number is {serial_number}"
-        )
-
-        # Poll again for troubleshoot phase
-        while True:
-            run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
-
-            if run_status.status == "requires_action":
-                tool_calls = run_status.required_action.submit_tool_outputs.tool_calls
-                outputs = handle_tool_calls(tool_calls, user_id)
-
-                client.beta.threads.runs.submit_tool_outputs(
-                    thread_id=thread.id,
-                    run_id=run.id,
-                    tool_outputs=outputs
-                )
-            elif run_status.status == "completed":
-                break
-
-            time.sleep(1)
 
     try:
         db_message = ConversationMessage(

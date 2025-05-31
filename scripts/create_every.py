@@ -122,7 +122,7 @@ def process_machine(machine_name):
 
 
 def main():
-    machine_name = "WLO70H"  # 👈 Change this to target a different folder
+    machine_name = "WLOL60H"  # 👈 Change this to target a different folder
     process_machine(machine_name)
 
 if __name__ == "__main__":
