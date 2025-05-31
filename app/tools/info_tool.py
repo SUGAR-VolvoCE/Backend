@@ -15,11 +15,12 @@ def search_machine(user_id: int, serial_number: str):
         return {"found": False}
 
 def search_machines_by_model(user_id: int, model_name: str):
-    print(user_id)
+    print(model_name)
     response = requests.post(f"{API_BASE_URL}/find_by_model", json={
         "user_id": user_id,
         "model": model_name
     })
+    print(response.json())
     if response.status_code == 200:
         return {"found": True, "data": response.json()}
     else:
@@ -41,7 +42,7 @@ def create_machine(user_id: int, model: str, serial_number: str):
 
 def match_model(model_name: str, user_id: int):
     # Validate against known models
-    valid_models = ["EC220D", "WLOL60H", "WLO70H"]
+    valid_models = ["EC220D", "WLOL60H", "WLOL70H"]
     valid = model_name.upper() in valid_models
     if valid:
         machines_result = search_machines_by_model(user_id, model_name)

@@ -258,6 +258,7 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
             print(detections)
 
             image_url = result["annotated_image_url"]
+
             print(image_url)
 
             if detections:
@@ -318,7 +319,10 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
 
     messages = client.beta.threads.messages.list(thread_id=thread.id)
     response = messages.data[0].content[0].text.value
-    response, image_url = process_text_return_image_url(response, image_dir="data/static/images")
+    response, image_url_text = process_text_return_image_url(response, image_dir="data/static/images")
+
+    if image_url_text:
+        image_url = image_url_text
 
     print("DEBUG: model_name =", user_info[user_id]["model_name"])
     print("DEBUG: serial_number =", user_info[user_id]["serial_number"])
