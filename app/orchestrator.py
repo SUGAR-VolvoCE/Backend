@@ -25,7 +25,7 @@ client = openai.OpenAI()
 detector = YoloDetector(
         api_url="https://detect.roboflow.com",
         api_key="BKDg8IoE7QqBivQ89Oyu",
-        model_id="hose-jbybw/1",
+        model_id="hose-jbybw/2",
         cloudinary_url="https://api.cloudinary.com/v1_1/dn8rj0auz/image/upload",
         upload_preset="sugar-2025"
 )
@@ -276,7 +276,7 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
                 ])
                 print(detected_text)
 
-                message += f"System analysis of image (not user input):\n\n**Detected Issues:**\n{detected_text}\n\n**Annotated Image:** {image_url}"
+                message += f"System analysis of image (not user input):\n\n**Detected Issues:**\n{detected_text}\n\n**"
             else:
                 message += "System analysis of image (not user input): \n\n✅ No issues detected with confidence above 25% in the image (from the image uploaded)."
 
