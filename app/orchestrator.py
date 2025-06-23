@@ -84,6 +84,7 @@ def handle_tool_calls(tool_calls, user_id) -> Tuple[List[Dict], List[str]]:
             try:
                 # Processing tool calls based on the tool_name
                 if tool_name == "search_manuals":
+                    print("[TROUBLESHOOT ASSISTANT:] I am searching the manuals now...")
                     try:
                         args.setdefault("machine_name", user_info[user_id].get("model_name", "DEFAULT"))
                         result = tool_function_map[tool_name](
@@ -235,16 +236,16 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
             user_info[user_id]["model_name"] = "WLOL60H"
             user_info[user_id]["serial_number"] = "VCEWLOL60H123092"
             user_info[user_id]["machine_id"] = 49  # store as int, not string
-            print("reseting")
+            print("Starting conversation!")
 
         except Exception as e:
             logger.exception("Error saving reset details")  # logs traceback
 
-    print("DEBUG: model_name =", user_info[user_id]["model_name"])
-    print("DEBUG: serial_number =", user_info[user_id]["serial_number"])
+    print("DEBUG: The user's model_name =", user_info[user_id]["model_name"])
+    print("DEBUG: The user's serial_number =", user_info[user_id]["serial_number"])
 
     current_phase = user_threads[user_id]["phase"]
-    print(current_phase)
+    print("[MANAGER ASSISTANT:] We are using the Troubleshoot Assistant")
     image_url = None
 
     assistant = assistants[current_phase]
@@ -262,7 +263,6 @@ def chat_with_assistant(user_id: str, message: str, reset: bool = False, file_ur
         try:
             result = detector.detect_yolo(file_url)  # result is a dict
             detections = result["detections"]
-            print(detections)
 
             image_url = result["annotated_image_url"]
 
